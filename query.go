@@ -3,6 +3,8 @@ package dynamodbfriend
 import (
 	"context"
 	"fmt"
+
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
 // Query returns a new QueryParser that may be used to retrieve query results.
@@ -22,9 +24,10 @@ func (table *Table) Query(ctx context.Context, expr *QueryExpr) (*QueryParser, e
 	}
 
 	return &QueryParser{
-		table:      table,
-		expr:       expr,
-		queryInput: queryInput,
+		table:         table,
+		expr:          expr,
+		queryInput:    queryInput,
+		bufferedItems: []map[string]*dynamodb.AttributeValue{},
 	}, nil
 }
 

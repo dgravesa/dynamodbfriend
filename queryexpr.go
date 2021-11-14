@@ -14,7 +14,7 @@ type QueryExpr struct {
 	filters map[string]queryFilter
 
 	limitSpecified bool
-	limit          int
+	limitPerPage   int
 
 	attributesSpecified bool
 	attributes          []string
@@ -43,10 +43,10 @@ func (expr *QueryExpr) And(key string) *QueryExprKey {
 	}
 }
 
-// Limit restricts the number of items returnable by a query.
-func (expr *QueryExpr) Limit(count int) *QueryExpr {
+// LimitPerPage restricts the number of items evaluated per query page.
+func (expr *QueryExpr) LimitPerPage(count int) *QueryExpr {
 	expr.limitSpecified = true
-	expr.limit = count
+	expr.limitPerPage = count
 	expr.logger.Printf("query limit set to %d items\n", count)
 	return expr
 }
@@ -267,7 +267,7 @@ func (expr QueryExpr) constructQueryInputGivenIndex(index *tableIndex) (*dynamod
 	}
 
 	if expr.limitSpecified {
-		queryInput.Limit = aws.Int64(int64(expr.limit))
+		queryInput.Limit = aws.Int64(int64(expr.limitPerPage))
 	}
 
 	if expr.consistentRead {
