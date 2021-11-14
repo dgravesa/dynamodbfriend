@@ -1,6 +1,8 @@
 package dynamodbfriend
 
 import (
+	"context"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
@@ -51,13 +53,14 @@ func (table *Table) indexNameSet() *nameSet {
 	return indexNames
 }
 
-func (table *Table) fetchIndexMetadata() error {
+func (table *Table) fetchIndexMetadata(ctx context.Context) error {
 	table.allIndexes = nil
 
 	// make call to AWS describe table
-	describeInfo, err := table.baseClient.DescribeTable(&dynamodb.DescribeTableInput{
-		TableName: aws.String(table.Name),
-	})
+	describeInfo, err := table.baseClient.DescribeTableWithContext(ctx,
+		&dynamodb.DescribeTableInput{
+			TableName: aws.String(table.Name),
+		})
 	if err != nil {
 		return err
 	}

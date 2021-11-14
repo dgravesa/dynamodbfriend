@@ -1,14 +1,17 @@
 package dynamodbfriend
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Query returns a new QueryParser that may be used to retrieve query results.
-func (table *Table) Query(expr *QueryExpr) (*QueryParser, error) {
+func (table *Table) Query(ctx context.Context, expr *QueryExpr) (*QueryParser, error) {
 	if expr.buildErr != nil {
 		return nil, expr.buildErr
 	}
 
-	queryIndex, err := table.chooseIndex(expr)
+	queryIndex, err := table.chooseIndex(ctx, expr)
 	if err != nil {
 		return nil, err
 	}
@@ -25,8 +28,8 @@ func (table *Table) Query(expr *QueryExpr) (*QueryParser, error) {
 	}, nil
 }
 
-func (table *Table) chooseIndex(expr *QueryExpr) (*tableIndex, error) {
-	viableIndexNameSet, err := table.getViableQueryIndexes(expr)
+func (table *Table) chooseIndex(ctx context.Context, expr *QueryExpr) (*tableIndex, error) {
+	viableIndexNameSet, err := table.getViableQueryIndexes(ctx, expr)
 	if err != nil {
 		return nil, err
 	}
@@ -73,10 +76,10 @@ func (table *Table) chooseIndex(expr *QueryExpr) (*tableIndex, error) {
 	return table.allIndexes[chosenIndexName], nil
 }
 
-func (table *Table) getViableQueryIndexes(expr *QueryExpr) (*nameSet, error) {
+func (table *Table) getViableQueryIndexes(ctx context.Context, expr *QueryExpr) (*nameSet, error) {
 	// learn table indexes if not already known
 	if table.allIndexes == nil {
-		if err := table.fetchIndexMetadata(); err != nil {
+		if err := table.fetchIndexMetadata(ctx); err != nil {
 			return nil, err
 		}
 	}
