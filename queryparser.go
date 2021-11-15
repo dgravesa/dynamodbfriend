@@ -2,7 +2,6 @@ package dynamodbfriend
 
 import (
 	"context"
-	"errors"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
@@ -20,38 +19,28 @@ type QueryParser struct {
 
 	bufferedItemsRemaining int
 	bufferedItems          []map[string]*dynamodb.AttributeValue
+	currentBufferIndex     int
 
-	totalItemsParsed int
 	totalPagesParsed int
-	allPagesParsed   bool
-
-	parsingComplete bool
 }
-
-// ParsingComplete is the error returned by QueryParser's Next when parsing has completed, either
-// by all query items being consumed, the limit being reached, or the max pagination being
-// reached.
-var ParsingComplete = errors.New("parsing is complete")
 
 // Next retrieves the next value returned by the query. The val must be a non-nil pointer.
 // The underlying query will only execute when new items are requested and any buffered items have
 // already been consumed.
 func (parser *QueryParser) Next(ctx context.Context, val interface{}) error {
-	if parser.parsingComplete {
-		return ParsingComplete
+	parsingComplete := func(reason string) error {
+		err := ErrParsingComplete{reason: reason}
+		parser.expr.logger.Printf("%s\n", err)
+		return err
 	}
 
 	// execute a new query to refill the buffer if necessary
-	if parser.bufferedItemsRemaining == 0 {
-		if parser.allPagesParsed {
-			parser.expr.logger.Printf("all pages have been parsed\n")
-			parser.parsingComplete = true
-			return ParsingComplete
-		} else if parser.expr.maxPaginationSpecified &&
-			parser.totalPagesParsed == parser.expr.maxPagination {
-			parser.expr.logger.Printf("max pagination has been reached\n")
-			parser.parsingComplete = true
-			return ParsingComplete
+	// retry until new items are found or a parsing complete condition has been met
+	for parser.currentBufferIndex == len(parser.bufferedItems) {
+		if parser.allItemsParsed() {
+			return parsingComplete("all items have been parsed")
+		} else if parser.maxPaginationReached() {
+			return parsingComplete("max pagination has been reached")
 		}
 
 		parser.queryInput.ExclusiveStartKey = parser.lastEvaluatedKey
@@ -61,37 +50,27 @@ func (parser *QueryParser) Next(ctx context.Context, val interface{}) error {
 			return err
 		}
 
-		// TODO: may be an issue of items being parsed but not matching on filter condition
-		if len(queryOutput.Items) == 0 {
-			parser.expr.logger.Printf("no items returned from query\n")
-			parser.parsingComplete = true
-			return ParsingComplete
-		}
-
-		if lastEvaluatedKeyIsEmpty(queryOutput.LastEvaluatedKey) {
-			parser.allPagesParsed = true
-		} else {
-			parser.lastEvaluatedKey = queryOutput.LastEvaluatedKey
-		}
-
+		parser.lastEvaluatedKey = queryOutput.LastEvaluatedKey
 		parser.totalPagesParsed++
 		parser.bufferedItems = queryOutput.Items
-		parser.bufferedItemsRemaining = len(queryOutput.Items)
+		parser.currentBufferIndex = 0
 	}
 
-	thisItemIndex := len(parser.bufferedItems) - parser.bufferedItemsRemaining
-	thisItem := parser.bufferedItems[thisItemIndex]
-	parser.bufferedItemsRemaining--
-	parser.totalItemsParsed++
-
-	if parser.totalItemsParsed == parser.expr.limit {
-		parser.expr.logger.Printf("parsing has reached limit of %d\n", parser.expr.limit)
-		parser.parsingComplete = true
-	}
+	thisItem := parser.bufferedItems[parser.currentBufferIndex]
+	parser.currentBufferIndex++
 
 	return dynamodbattribute.UnmarshalMap(thisItem, val)
 }
 
-func lastEvaluatedKeyIsEmpty(lastEvaluatedKey map[string]*dynamodb.AttributeValue) bool {
-	return lastEvaluatedKey == nil || len(lastEvaluatedKey) == 0
+func (parser *QueryParser) lastEvaluatedKeyIsEmpty() bool {
+	return parser.lastEvaluatedKey == nil || len(parser.lastEvaluatedKey) == 0
+}
+
+func (parser *QueryParser) allItemsParsed() bool {
+	return parser.totalPagesParsed > 0 && parser.lastEvaluatedKeyIsEmpty()
+}
+
+func (parser *QueryParser) maxPaginationReached() bool {
+	return parser.expr.maxPaginationSpecified &&
+		parser.totalPagesParsed == parser.expr.maxPagination
 }
